@@ -1,9 +1,9 @@
 """
 Punto Glow Beauty Management Studio - Aplicación Principal
 Mentora: Data Science Mentorship Program (Fase 0)
-Descripción: Sistema integral de gestión con autenticación restrictiva exclusiva
-             para garcialarissa1292@gmail.com. Incluye solución de compatibilidad 
-             para la columna 'Rol' en usuarios_punto_glow.csv.
+Descripción: Sistema integral de gestión con métricas dinámicas en tiempo real.
+             Garantiza el cálculo real de ventas diarias (iniciando en $0.00 si no hay registros hoy),
+             alta y baja de usuarios para garcialarissa1292@gmail.com, agenda y gastos.
 """
 
 import io
@@ -202,7 +202,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 2. AUTENTICACIÓN Y MIGRACIÓN AUTOMÁTICA DE USUARIOS
+# 2. AUTENTICACIÓN Y CONTROL DE USUARIOS
 # -----------------------------------------------------------------------------
 FILE_USUARIOS = "usuarios_punto_glow.csv"
 CORREO_ADMIN_UNICO = "garcialarissa1292@gmail.com"
@@ -215,7 +215,6 @@ def sanitizar_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def obtener_dataframe_usuarios() -> pd.DataFrame:
-    """Carga y repara el archivo de usuarios garantizando la columna 'Rol'."""
     cols_requeridas = ["Nombre", "Correo", "Password", "Rol"]
     
     if not os.path.exists(FILE_USUARIOS):
@@ -231,7 +230,6 @@ def obtener_dataframe_usuarios() -> pd.DataFrame:
     df_usr = pd.read_csv(FILE_USUARIOS)
     df_usr = sanitizar_dataframe(df_usr)
 
-    # REPARACIÓN AUTOMÁTICA DEL KEYERROR
     if "Rol" not in df_usr.columns:
         df_usr["Rol"] = df_usr["Correo"].apply(
             lambda c: "Admin" if str(c).strip().lower() == CORREO_ADMIN_UNICO else "Especialista"
@@ -287,7 +285,7 @@ def requerir_login():
                     st.error("Credenciales incorrectas o usuario no autorizado.")
 
 # -----------------------------------------------------------------------------
-# 3. MIGRACIÓN Y LIMPIEZA DE DATOS FINANCIEROS Y CITAS
+# 3. MIGRACIÓN Y ESTABLECIMIENTO DE ESTRUCTURAS BASE
 # -----------------------------------------------------------------------------
 FILE_VENTAS = "ventas_punto_glow.csv"
 FILE_GASTOS = "gastos_punto_glow.csv"
@@ -296,48 +294,28 @@ FILE_CITAS = "citas_punto_glow.csv"
 def inicializar_y_migrar_archivos():
     cols_citas = ["Fecha", "Hora", "Cliente", "Tel_Cliente", "Servicio", "Especialista", "Tel_Especialista", "Link Meet", "Anticipo ($)", "Estatus", "Motivo Cancelación"]
     cols_ventas = ["Fecha_Hora", "Cliente", "Servicio", "Ubicación", "Atendido Por", "Cobro Total ($)", "Pago al Talento ($)", "20% Arguettas ($)", "Utilidad Punto Glow ($)", "Dinero", "Comentarios"]
+    cols_gastos = ["Fecha", "Concepto", "Categoría", "Monto ($)"]
 
     if not os.path.exists(FILE_CITAS):
-        pd.DataFrame([{
-            "Fecha": "2026-08-28",
-            "Hora": "11:00 a. m.",
-            "Cliente": "Sofía Mendoza",
-            "Tel_Cliente": "5215512345678",
-            "Servicio": "Uñas & Lash Lift",
-            "Especialista": "Mariana",
-            "Tel_Especialista": "524420001122",
-            "Link Meet": "https://meet.google.com/new",
-            "Anticipo ($)": 200.0,
-            "Estatus": "Confirmada",
-            "Motivo Cancelación": "N/A"
-        }]).to_csv(FILE_CITAS, index=False)
+        pd.DataFrame(columns=cols_citas).to_csv(FILE_CITAS, index=False)
     else:
         df_c_temp = pd.read_csv(FILE_CITAS)
-        if "Anticipo ($)" not in df_c_temp.columns: df_c_temp["Anticipo ($)"] = 0.0
-        if "Estatus" not in df_c_temp.columns: df_c_temp["Estatus"] = "Confirmada"
-        if "Motivo Cancelación" not in df_c_temp.columns: df_c_temp["Motivo Cancelación"] = "N/A"
+        for col in cols_citas:
+            if col not in df_c_temp.columns:
+                df_c_temp[col] = 0.0 if "$" in col else "N/A"
         sanitizar_dataframe(df_c_temp[cols_citas]).to_csv(FILE_CITAS, index=False)
 
     if not os.path.exists(FILE_VENTAS):
-        pd.DataFrame([{
-            "Fecha_Hora": "2026-08-26 11:04",
-            "Cliente": "Orgánico",
-            "Servicio": "Uñas Gel / Acrílico",
-            "Ubicación": "Santa Fe",
-            "Atendido Por": "Mariana",
-            "Cobro Total ($)": 600.0,
-            "Pago al Talento ($)": 300.0,
-            "20% Arguettas ($)": 0.0,
-            "Utilidad Punto Glow ($)": 300.0,
-            "Dinero": "Efectivo",
-            "Comentarios": "Cliente de paso"
-        }]).to_csv(FILE_VENTAS, index=False)
+        pd.DataFrame(columns=cols_ventas).to_csv(FILE_VENTAS, index=False)
+    else:
+        df_v_temp = pd.read_csv(FILE_VENTAS)
+        sanitizar_dataframe(df_v_temp).to_csv(FILE_VENTAS, index=False)
 
     if not os.path.exists(FILE_GASTOS):
-        pd.DataFrame([
-            {"Fecha": "2026-08-26", "Concepto": "Insumos Pestañas", "Categoría": "Insumos / Productos", "Monto ($)": 850.0},
-            {"Fecha": "2026-08-27", "Concepto": "Gelish Base Base", "Categoría": "Insumos / Productos", "Monto ($)": 490.0}
-        ]).to_csv(FILE_GASTOS, index=False)
+        pd.DataFrame(columns=cols_gastos).to_csv(FILE_GASTOS, index=False)
+    else:
+        df_g_temp = pd.read_csv(FILE_GASTOS)
+        sanitizar_dataframe(df_g_temp).to_csv(FILE_GASTOS, index=False)
 
 # -----------------------------------------------------------------------------
 # 4. CONTROL PRINCIPAL DE EJECUCIÓN
@@ -568,14 +546,27 @@ else:
     # VISTAS PRINCIPALES DE LA APLICACIÓN
     # -------------------------------------------------------------------------
     if menu_seleccionado == "Dashboard Panel":
-        v_mes = df_ventas["Cobro Total ($)"].sum() if not df_ventas.empty else 0.0
-        g_mes = df_gastos["Monto ($)"].sum() if not df_gastos.empty else 0.0
-        utilidad_glow_total = df_ventas["Utilidad Punto Glow ($)"].sum() if not df_ventas.empty else 0.0
+        # CÁLCULO ESTRICTO Y RECALCULADO EN TIEMPO REAL PARA HOY
+        fecha_hoy_str = datetime.now().strftime("%Y-%m-%d")
+        
+        if not df_ventas.empty and "Fecha_Hora" in df_ventas.columns:
+            # Filtrar filas cuyo inicio coincida con la fecha de hoy Y que no sea nulo
+            ventas_hoy_df = df_ventas[
+                df_ventas["Fecha_Hora"].dropna().astype(str).str.startswith(fecha_hoy_str)
+            ]
+            v_hoy = float(ventas_hoy_df["Cobro Total ($)"].sum()) if not ventas_hoy_df.empty else 0.0
+        else:
+            v_hoy = 0.0
+
+        v_mes = float(df_ventas["Cobro Total ($)"].sum()) if not df_ventas.empty else 0.0
+        g_mes = float(df_gastos["Monto ($)"].sum()) if not df_gastos.empty else 0.0
+        utilidad_glow_total = float(df_ventas["Utilidad Punto Glow ($)"].sum()) if not df_ventas.empty else 0.0
         ganancia_neta = utilidad_glow_total - g_mes
         margen_rent = (ganancia_neta / v_mes * 100) if v_mes > 0 else 0.0
 
+        # RENDERIZADO DINÁMICO DE TARJETAS METRICAS
         k1, k2, k3, k4 = st.columns([1, 1, 1, 1.2])
-        k1.markdown('<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">VENTAS DE HOY</div><div class="metric-val">$600.00</div><div style="color:#2ECC71; font-weight:600; font-size:0.85rem;">↗ Ingreso diario</div></div>', unsafe_allow_html=True)
+        k1.markdown(f'<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">VENTAS DE HOY</div><div class="metric-val">${v_hoy:,.2f}</div><div style="color:#2ECC71; font-weight:600; font-size:0.85rem;">↗ Ingreso diario real</div></div>', unsafe_allow_html=True)
         k2.markdown(f'<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">COBRO TOTAL DEL MES</div><div class="metric-val">${v_mes:,.2f}</div><div style="color:#888888; font-size:0.85rem;">{len(df_ventas)} servicios realizados</div></div>', unsafe_allow_html=True)
         k3.markdown(f'<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">GASTOS DEL MES</div><div class="metric-val" style="color:#E74C3C;">${g_mes:,.2f}</div><div style="color:#E74C3C; font-size:0.85rem;">{len(df_gastos)} egresos registrados</div></div>', unsafe_allow_html=True)
         k4.markdown(f'<div class="card-metric-black"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">UTILIDAD NETA GLOW</div><div class="metric-val-black">${ganancia_neta:,.2f}</div><div style="color:#F089AB; font-weight:600; font-size:0.85rem;">Margen: {margen_rent:.1f}% de rentabilidad</div></div>', unsafe_allow_html=True)
@@ -585,10 +576,21 @@ else:
         
         with g_col1:
             st.markdown("### **Resumen Financiero (Últimos 7 Días)**")
-            fechas_7d = [(datetime.now() - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)]
+            fechas_7d = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+            fechas_7d_labels = [(datetime.now() - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)]
+            
+            ventas_diarias = []
+            gastos_diarios = []
+            
+            for f_str in fechas_7d:
+                v_sum = df_ventas[df_ventas["Fecha_Hora"].dropna().astype(str).str.startswith(f_str)]["Cobro Total ($)"].sum() if not df_ventas.empty else 0.0
+                g_sum = df_gastos[df_gastos["Fecha"].dropna().astype(str).str.startswith(f_str)]["Monto ($)"].sum() if not df_gastos.empty else 0.0
+                ventas_diarias.append(float(v_sum))
+                gastos_diarios.append(float(g_sum))
+
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=fechas_7d, y=[0, 600, 1000, 0, 0, 0, 0], mode='lines+markers', name='Ventas ($)', line=dict(color='#F089AB', width=4, shape='spline'), fill='tozeroy', fillcolor='rgba(240, 137, 171, 0.15)'))
-            fig.add_trace(go.Scatter(x=fechas_7d, y=[0, 850, 490, 0, 0, 0, 0], mode='lines+markers', name='Gastos ($)', line=dict(color='#000000', width=2, dash='dash', shape='spline')))
+            fig.add_trace(go.Scatter(x=fechas_7d_labels, y=ventas_diarias, mode='lines+markers', name='Ventas ($)', line=dict(color='#F089AB', width=4, shape='spline'), fill='tozeroy', fillcolor='rgba(240, 137, 171, 0.15)'))
+            fig.add_trace(go.Scatter(x=fechas_7d_labels, y=gastos_diarios, mode='lines+markers', name='Gastos ($)', line=dict(color='#000000', width=2, dash='dash', shape='spline')))
             fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='white', height=330, margin=dict(l=10, r=10, t=10, b=10))
             st.plotly_chart(fig, use_container_width=True)
 
@@ -596,8 +598,9 @@ else:
             st.markdown("### **📅 Citas para Hoy**")
             with st.container():
                 st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
-                if not df_citas.empty:
-                    for idx, row in df_citas.iterrows():
+                citas_hoy = df_citas[df_citas["Fecha"].dropna().astype(str) == fecha_hoy_str] if not df_citas.empty else pd.DataFrame()
+                if not citas_hoy.empty:
+                    for idx, row in citas_hoy.iterrows():
                         st.markdown(f"""
                         <div style="background-color:#FFF0F5; border-radius:14px; padding:12px; margin-bottom:10px; border-left:5px solid #F089AB;">
                             <div style="font-weight:700; color:#000000;">⏰ {row['Hora']} - {row['Cliente']}</div>
@@ -605,7 +608,7 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
                 else:
-                    st.info("No hay citas programadas.")
+                    st.info("No hay citas programadas para el día de hoy.")
                 st.markdown('</div>', unsafe_allow_html=True)
 
     elif menu_seleccionado == "Ventas (Ingresos)":
@@ -626,12 +629,12 @@ else:
         df_filtrado = df_ventas.copy()
         if busqueda:
             df_filtrado = df_filtrado[
-                df_filtrado['Cliente'].str.contains(busqueda, case=False, na=False) |
-                df_filtrado['Servicio'].str.contains(busqueda, case=False, na=False) |
-                df_filtrado['Ubicación'].str.contains(busqueda, case=False, na=False)
+                df_filtrado['Cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
+                df_filtrado['Servicio'].astype(str).str.contains(busqueda, case=False, na=False) |
+                df_filtrado['Ubicación'].astype(str).str.contains(busqueda, case=False, na=False)
             ]
         
-        total_filtrado = df_filtrado["Cobro Total ($)"].sum() if not df_filtrado.empty else 0.0
+        total_filtrado = float(df_filtrado["Cobro Total ($)"].sum()) if not df_filtrado.empty else 0.0
         with b_col2:
             st.markdown(f'<div style="text-align:right; font-size:1.05rem; font-weight:600; color:#333; margin-top:8px;">Total Filtrado: <span style="color:#F089AB; font-weight:700;">${total_filtrado:,.2f}</span></div>', unsafe_allow_html=True)
 
@@ -657,10 +660,10 @@ else:
                 r2.markdown(f"**{row['Cliente']}**")
                 r3.markdown(f'<span class="service-badge">{row["Servicio"]}</span>', unsafe_allow_html=True)
                 r4.write(row["Ubicación"])
-                r5.markdown(f'<span class="monto-green">${row["Cobro Total ($)"]:,.2f}</span>', unsafe_allow_html=True)
-                r6.write(f'${row["Pago al Talento ($)"]:,.2f}')
-                r7.write(f'${row["20% Arguettas ($)"]:,.2f}')
-                r8.markdown(f'**${row["Utilidad Punto Glow ($)"]:,.2f}**')
+                r5.markdown(f'<span class="monto-green">${float(row["Cobro Total ($)"]):,.2f}</span>', unsafe_allow_html=True)
+                r6.write(f'${float(row["Pago al Talento ($)"]):,.2f}')
+                r7.write(f'${float(row["20% Arguettas ($)"]):,.2f}')
+                r8.markdown(f'**${float(row["Utilidad Punto Glow ($)"]):,.2f}**')
                 r9.write(row["Dinero"])
                 
                 if r10.button("🗑️", key=f"del_venta_{idx}"):
@@ -693,7 +696,7 @@ else:
                 rg1.write(row["Fecha"])
                 rg2.write(row["Concepto"])
                 rg3.write(row["Categoría"])
-                rg4.markdown(f'<span class="monto-red">${row["Monto ($)"]:,.2f}</span>', unsafe_allow_html=True)
+                rg4.markdown(f'<span class="monto-red">${float(row["Monto ($)"]):,.2f}</span>', unsafe_allow_html=True)
                 
                 if rg5.button("🗑️", key=f"del_gasto_{idx}"):
                     df_gastos = df_gastos.drop(idx).reset_index(drop=True)
@@ -717,7 +720,7 @@ else:
                 
                 with col_c1:
                     st.markdown(f"### 📅 Cita: **{row['Cliente']}** — {row['Fecha']} a las {row['Hora']} <span class='{estatus_class}'>{row['Estatus']}</span>", unsafe_allow_html=True)
-                    st.markdown(f"💅 **Servicio:** {row['Servicio']} | 👩‍🎨 **Especialista:** {row['Especialista']} | 💰 **Anticipo Abonado:** ${row['Anticipo ($)']:,.2f}")
+                    st.markdown(f"💅 **Servicio:** {row['Servicio']} | 👩‍🎨 **Especialista:** {row['Especialista']} | 💰 **Anticipo Abonado:** ${float(row['Anticipo ($)']):,.2f}")
                     
                     if row["Estatus"] == "Cancelada":
                         st.error(f"❌ **Motivo de Cancelación:** {row['Motivo Cancelación']}")
@@ -742,7 +745,7 @@ else:
                             st.success("Estatus actualizado correctamente.")
                             st.rerun()
 
-                msg_cli = f"¡Hola {row['Cliente']}! ✨ Tu cita en Punto Glow está confirmada para el {row['Fecha']} a las {row['Hora']} ({row['Servicio']}). Anticipo abonado: ${row['Anticipo ($)']:,.2f}."
+                msg_cli = f"¡Hola {row['Cliente']}! ✨ Tu cita en Punto Glow está confirmada para el {row['Fecha']} a las {row['Hora']} ({row['Servicio']}). Anticipo abonado: ${float(row['Anticipo ($)']):,.2f}."
                 msg_esp = f"Hola {row['Especialista']}, tienes cita el {row['Fecha']} a las {row['Hora']} con la clienta {row['Cliente']} ({row['Servicio']}). Enlace Meet: {row['Link Meet']}."
                 
                 link_cli = crear_link_wa(row.get("Tel_Cliente", "5215512345678"), msg_cli)
@@ -767,9 +770,6 @@ else:
         with tab_g:
             st.dataframe(df_gastos, use_container_width=True)
 
-    # -------------------------------------------------------------------------
-    # PESTAÑA EXCLUSIVA ADMINISTRADORA: ALTA Y ELIMINACIÓN DE USUARIOS
-    # -------------------------------------------------------------------------
     elif menu_seleccionado == "Gestión de Usuarios":
         st.markdown('<div class="section-title">👤 Panel Exclusivo Administradora: Gestión de Usuarios</div>', unsafe_allow_html=True)
         st.markdown('<div class="section-sub">Solo tú tienes autorización para registrar o eliminar accesos del sistema</div>', unsafe_allow_html=True)
@@ -820,7 +820,6 @@ else:
                         st.markdown(f"👤 **{u_row['Nombre']}** ({u_row['Rol']})")
                         st.caption(f"✉️ {u_row['Correo']}")
                     with u_col2:
-                        # Bloquear eliminación de tu usuario principal
                         if u_row['Correo'].lower() == CORREO_ADMIN_UNICO:
                             st.markdown("🔒 *Admin*")
                         else:
