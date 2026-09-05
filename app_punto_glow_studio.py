@@ -1,20 +1,28 @@
 """
 Punto Glow Beauty Management Studio - Aplicación Principal
 Mentora: Data Science Mentorship Program (Fase 0)
-Descripción: Sistema integral de gestión con métricas dinámicas en tiempo real.
-             Garantiza el cálculo real de ventas diarias (iniciando en $0.00 si no hay registros hoy),
-             alta y baja de usuarios para garcialarissa1292@gmail.com, agenda y gastos.
+Descripción: Sistema integral de gestión con hora sincronizada a CDMX (America/Mexico_City).
+             Incluye conversión directa de Citas a Ventas, cálculo diario estricto en $0.00
+             si no hay registros hoy, y gestión exclusiva de usuarios para garcialarissa1292@gmail.com.
 """
 
 import io
 import os
 import urllib.parse
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 from streamlit_option_menu import option_menu
+
+# Zona horaria oficial Ciudad de México
+TZ_CDMX = ZoneInfo("America/Mexico_City")
+
+def obtener_ahora_cdmx() -> datetime:
+    """Retorna la fecha y hora actual en la zona horaria de Ciudad de México."""
+    return datetime.now(TZ_CDMX)
 
 # -----------------------------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILOS CSS (#F089AB / #000000)
@@ -85,6 +93,7 @@ st.markdown("""
         border-radius: 20px;
         font-weight: 600;
         font-size: 0.95rem;
+        text-align: center;
     }
 
     .section-title {
@@ -342,19 +351,34 @@ else:
         return f"https://api.whatsapp.com/send?phone={telefono}&text={msg_encoded}"
 
     # -------------------------------------------------------------------------
-    # MODALES FLOTANTES (VENTAS, CITAS, GASTOS)
+    # MODALES FLOTANTES (VENTAS, CITAS, GASTOS, CONVERSIÓN DE CITAS)
     # -------------------------------------------------------------------------
     @st.dialog("Registrar Nueva Venta 💖")
-    def modal_nueva_venta():
+    def modal_nueva_venta(datos_precargados=None):
+        def_cliente = datos_precargados.get("Cliente", "") if datos_precargados else ""
+        def_atiende = datos_precargados.get("Especialista", "Mariana") if datos_precargados else "Mariana"
+        def_servicio_txt = datos_precargados.get("Servicio", "") if datos_precargados else ""
+        def_anticipo = datos_precargados.get("Anticipo", 0.0) if datos_precargados else 0.0
+
+        opciones_servicios = ["Uñas Gel / Acrílico", "Diseño de Cejas / Microblading", "Lash Lifting / Pestañas", "Alaciado Permanente", "Facial Glowing", "Otro"]
+        index_serv = 0
+        if def_servicio_txt:
+            for i, op in enumerate(opciones_servicios):
+                if op.lower() in def_servicio_txt.lower():
+                    index_serv = i
+                    break
+
+        ahora_cdmx = obtener_ahora_cdmx()
+
         with st.form("form_modal_venta"):
             f1, f2 = st.columns(2)
-            fv_fecha = f1.date_input("FECHA", datetime.now().date())
-            fv_hora = f1.time_input("HORA", datetime.now().time())
-            fv_cliente = f2.text_input("NOMBRE DE LA CLIENTA *", placeholder="Ej. Lucía Fernández")
-            fv_atiende = f2.text_input("ATENDIDO POR *", value="Mariana")
+            fv_fecha = f1.date_input("FECHA", ahora_cdmx.date())
+            fv_hora = f1.time_input("HORA", ahora_cdmx.time())
+            fv_cliente = f2.text_input("NOMBRE DE LA CLIENTA *", value=def_cliente, placeholder="Ej. Lucía Fernández")
+            fv_atiende = f2.text_input("ATENDIDO POR *", value=def_atiende)
             
             f3, f4, f5 = st.columns(3)
-            fv_servicio = f3.selectbox("SERVICIO", ["Uñas Gel / Acrílico", "Diseño de Cejas / Microblading", "Lash Lifting / Pestañas", "Alaciado Permanente", "Facial Glowing", "Otro"])
+            fv_servicio = f3.selectbox("SERVICIO", opciones_servicios, index=index_serv)
             fv_ubicacion = f4.selectbox("UBICACIÓN / SEDE *", ["Santa Fe", "Arguettas", "A domicilio"])
             fv_dinero = f5.selectbox("DINERO (MÉTODO PAGO)", ["Efectivo", "Transferencia SPEI", "Tarjeta de Débito/Crédito"])
             
@@ -368,7 +392,8 @@ else:
             c_m3.text_input("20% ARGUETTAS ($)", value=f"${descuento_arguettas:,.2f}", disabled=True)
             st.info(f"💡 **Utilidad estimada Punto Glow:** ${utilidad_glow:,.2f}")
             
-            fv_comentarios = st.text_area("COMENTARIOS", placeholder="Notas adicionales del servicio...")
+            comentario_default = f"Convertida de Cita. Servicio: {def_servicio_txt}. Anticipo previo: ${def_anticipo:,.2f}" if datos_precargados else ""
+            fv_comentarios = st.text_area("COMENTARIOS", value=comentario_default, placeholder="Notas adicionales del servicio...")
             
             st.markdown("<br>", unsafe_allow_html=True)
             col_v1, col_v2 = st.columns(2)
@@ -398,6 +423,8 @@ else:
     @st.dialog("Agendar Cita Punto Glow 🎆")
     def modal_agendar_cita():
         st.caption("Captura la cita, anticipo abonado y datos de contacto")
+        ahora_cdmx = obtener_ahora_cdmx()
+
         with st.form("form_modal_cita"):
             fc_cliente = st.text_input("NOMBRE DE LA CLIENTA *", placeholder="Ej. Sofía Mendoza")
             fc_tel = st.text_input("WHATSAPP CLIENTA (CLAVE PAÍS 52) *", value="5215512345678")
@@ -408,8 +435,8 @@ else:
             fc_tel_esp = st.text_input("WHATSAPP TALENTO (CLAVE PAÍS 52) *", value="524420001122")
             
             col_f1, col_f2, col_f3 = st.columns(3)
-            fc_fecha = col_f1.date_input("FECHA *", datetime.now().date())
-            fc_hora = col_f2.time_input("HORA *", datetime.now().time())
+            fc_fecha = col_f1.date_input("FECHA *", ahora_cdmx.date())
+            fc_hora = col_f2.time_input("HORA *", ahora_cdmx.time())
             fc_anticipo = col_f3.number_input("ANTICIPO ABONADO ($)", min_value=0.0, step=50.0)
             
             generar_meet = st.checkbox("✨ Incluir enlace de Google Meet", value=True)
@@ -443,8 +470,10 @@ else:
 
     @st.dialog("Registrar Gasto Operativo 💸")
     def modal_nuevo_gasto():
+        ahora_cdmx = obtener_ahora_cdmx()
+
         with st.form("form_modal_gasto"):
-            fg_fecha = st.date_input("FECHA DEL GASTO", datetime.now().date())
+            fg_fecha = st.date_input("FECHA DEL GASTO", ahora_cdmx.date())
             fg_concepto = st.text_input("CONCEPTO DEL GASTO *", placeholder="Ej. Compra de gelish y acetona")
             fg_cat = st.selectbox("CATEGORÍA", ["Insumos / Productos", "Renta / Servicios", "Publicidad", "Nómina", "Otros Egresos"])
             fg_monto = st.number_input("MONTO ($) *", min_value=0.0, step=50.0)
@@ -514,9 +543,11 @@ else:
             st.rerun()
 
     # -------------------------------------------------------------------------
-    # BANNER SUPERIOR
+    # BANNER SUPERIOR CON HORA SINCRONIZADA A CDMX
     # -------------------------------------------------------------------------
     col_b1, col_b2 = st.columns([3.2, 1.8])
+    ahora_cdmx = obtener_ahora_cdmx()
+
     with col_b1:
         st.markdown("""
         <div class="top-banner">
@@ -530,14 +561,14 @@ else:
     with col_b2:
         st.write("")
         c_time, c_btn = st.columns([1.2, 1.5])
-        hora_actual = datetime.now().strftime("%I:%M:%S %p").lower()
-        c_time.markdown(f'<div class="clock-badge">🕒 {hora_actual}</div>', unsafe_allow_html=True)
+        hora_cdmx_str = ahora_cdmx.strftime("%I:%M:%S %p").lower()
+        c_time.markdown(f'<div class="clock-badge">🕒 {hora_cdmx_str}<br><span style="font-size:0.75rem; color:#888;">CDMX</span></div>', unsafe_allow_html=True)
         
         excel_data = generar_excel_cierre(df_ventas, df_gastos, df_citas)
         c_btn.download_button(
             label="📊 Exportar Excel",
             data=excel_data,
-            file_name=f"cierre_punto_glow_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            file_name=f"cierre_punto_glow_{ahora_cdmx.strftime('%Y%m%d')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
@@ -546,11 +577,9 @@ else:
     # VISTAS PRINCIPALES DE LA APLICACIÓN
     # -------------------------------------------------------------------------
     if menu_seleccionado == "Dashboard Panel":
-        # CÁLCULO ESTRICTO Y RECALCULADO EN TIEMPO REAL PARA HOY
-        fecha_hoy_str = datetime.now().strftime("%Y-%m-%d")
+        fecha_hoy_str = ahora_cdmx.strftime("%Y-%m-%d")
         
         if not df_ventas.empty and "Fecha_Hora" in df_ventas.columns:
-            # Filtrar filas cuyo inicio coincida con la fecha de hoy Y que no sea nulo
             ventas_hoy_df = df_ventas[
                 df_ventas["Fecha_Hora"].dropna().astype(str).str.startswith(fecha_hoy_str)
             ]
@@ -564,9 +593,8 @@ else:
         ganancia_neta = utilidad_glow_total - g_mes
         margen_rent = (ganancia_neta / v_mes * 100) if v_mes > 0 else 0.0
 
-        # RENDERIZADO DINÁMICO DE TARJETAS METRICAS
         k1, k2, k3, k4 = st.columns([1, 1, 1, 1.2])
-        k1.markdown(f'<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">VENTAS DE HOY</div><div class="metric-val">${v_hoy:,.2f}</div><div style="color:#2ECC71; font-weight:600; font-size:0.85rem;">↗ Ingreso diario real</div></div>', unsafe_allow_html=True)
+        k1.markdown(f'<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">VENTAS DE HOY</div><div class="metric-val">${v_hoy:,.2f}</div><div style="color:#2ECC71; font-weight:600; font-size:0.85rem;">↗ Ingreso diario CDMX</div></div>', unsafe_allow_html=True)
         k2.markdown(f'<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">COBRO TOTAL DEL MES</div><div class="metric-val">${v_mes:,.2f}</div><div style="color:#888888; font-size:0.85rem;">{len(df_ventas)} servicios realizados</div></div>', unsafe_allow_html=True)
         k3.markdown(f'<div class="card-metric"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">GASTOS DEL MES</div><div class="metric-val" style="color:#E74C3C;">${g_mes:,.2f}</div><div style="color:#E74C3C; font-size:0.85rem;">{len(df_gastos)} egresos registrados</div></div>', unsafe_allow_html=True)
         k4.markdown(f'<div class="card-metric-black"><div style="font-size:0.8rem; font-weight:700; color:#A0A0A0;">UTILIDAD NETA GLOW</div><div class="metric-val-black">${ganancia_neta:,.2f}</div><div style="color:#F089AB; font-weight:600; font-size:0.85rem;">Margen: {margen_rent:.1f}% de rentabilidad</div></div>', unsafe_allow_html=True)
@@ -576,8 +604,8 @@ else:
         
         with g_col1:
             st.markdown("### **Resumen Financiero (Últimos 7 Días)**")
-            fechas_7d = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
-            fechas_7d_labels = [(datetime.now() - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)]
+            fechas_7d = [(ahora_cdmx - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(6, -1, -1)]
+            fechas_7d_labels = [(ahora_cdmx - timedelta(days=i)).strftime("%d/%m") for i in range(6, -1, -1)]
             
             ventas_diarias = []
             gastos_diarios = []
@@ -710,13 +738,13 @@ else:
 
     elif menu_seleccionado == "Agenda & Meet":
         st.markdown('<div class="section-title">✨ Agenda & Notificaciones por WhatsApp</div>', unsafe_allow_html=True)
-        st.markdown('<div class="section-sub">Gestión de citas, control de anticipos, cancelaciones y eliminación</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-sub">Gestión de citas, conversión directa a ventas y control de estatus</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
         if not df_citas.empty:
             for idx, row in df_citas.iterrows():
                 estatus_class = "status-confirmada" if row["Estatus"] == "Confirmada" else "status-cancelada"
-                col_c1, col_c2 = st.columns([4, 1])
+                col_c1, col_c2 = st.columns([3.8, 1.2])
                 
                 with col_c1:
                     st.markdown(f"### 📅 Cita: **{row['Cliente']}** — {row['Fecha']} a las {row['Hora']} <span class='{estatus_class}'>{row['Estatus']}</span>", unsafe_allow_html=True)
@@ -726,7 +754,15 @@ else:
                         st.error(f"❌ **Motivo de Cancelación:** {row['Motivo Cancelación']}")
                 
                 with col_c2:
-                    if st.button("🗑️ Borrar", key=f"btn_del_cita_{idx}"):
+                    if st.button("💳 Convertir a Venta", key=f"btn_conv_venta_{idx}"):
+                        modal_nueva_venta(datos_precargados={
+                            "Cliente": row["Cliente"],
+                            "Especialista": row["Especialista"],
+                            "Servicio": row["Servicio"],
+                            "Anticipo": float(row["Anticipo ($)"])
+                        })
+                    
+                    if st.button("🗑️ Borrar Cita", key=f"btn_del_cita_{idx}"):
                         df_citas = df_citas.drop(idx).reset_index(drop=True)
                         df_citas.to_csv(FILE_CITAS, index=False)
                         st.success("Cita eliminada correctamente.")
