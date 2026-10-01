@@ -3,12 +3,13 @@ Punto Glow Beauty Management Studio - Aplicación Principal
 Sistema integral de gestión con hora sincronizada a CDMX (America/Mexico_City).
 Incluye sesión persistente diaria, conversión directa de Citas a Ventas,
 registro de ventas basado únicamente en fecha, gestión exclusiva de usuarios y
-links automáticos de Google Calendar en la confirmación de WhatsApp.
+links ultra-cortos garantizados (is.gd) de Google Calendar para WhatsApp.
 """
 import io
 import os
 import json
 import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import plotly.graph_objects as go
@@ -32,9 +33,33 @@ def calcular_hora_fin(hora_str: str, min_duracion: int) -> str:
     except Exception:
         return hora_str
 
+def acortar_url_isgd(url_larga: str) -> str:
+    """
+    Acorta un enlace largo utilizando la API ultra-rápida y directa de is.gd.
+    Si falla por falta de internet, reintenta con TinyURL o regresa el enlace original.
+    """
+    try:
+        api_isgd = f"https://is.gd/create.php?format=simple&url={urllib.parse.quote(url_larga)}"
+        req = urllib.request.Request(api_isgd, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            res_text = response.read().decode('utf-8').strip()
+            if res_text.startswith("http"):
+                return res_text
+    except Exception:
+        pass
+        
+    # Respaldo rápido con TinyURL
+    try:
+        api_tiny = f"http://tinyurl.com/api-create.php?url={urllib.parse.quote(url_larga)}"
+        req_tiny = urllib.request.Request(api_tiny, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req_tiny, timeout=3) as response:
+            return response.read().decode('utf-8').strip()
+    except Exception:
+        return url_larga
+
 def generar_link_gcal(fecha_str: str, hora_rango: str, servicio: str, cliente: str) -> str:
     """
-    Genera un enlace público de Google Calendar con la fecha, hora inicio, hora fin,
+    Genera un enlace público ultra-corto de Google Calendar con la fecha, hora inicio, hora fin,
     título del servicio y detalles de la cita en Punto Glow.
     """
     try:
@@ -52,8 +77,10 @@ def generar_link_gcal(fecha_str: str, hora_rango: str, servicio: str, cliente: s
         detalles = urllib.parse.quote(f"Cita agendada para {cliente} en Punto Glow Beauty Studio ✨. Servicio: {servicio}.")
         ubicacion = urllib.parse.quote("Punto Glow Beauty Studio")
         
-        link = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={titulo}&dates={dates_param}&details={detalles}&location={ubicacion}&ctz=America/Mexico_City"
-        return link
+        link_largo = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={titulo}&dates={dates_param}&details={detalles}&location={ubicacion}&ctz=America/Mexico_City"
+        
+        # Acortar enlace inmediatamente con is.gd
+        return acortar_url_isgd(link_largo)
     except Exception:
         return "https://calendar.google.com"
 
@@ -864,12 +891,12 @@ else:
                             st.success("Estatus actualizado correctamente.")
                             st.rerun()
                             
-                link_gcal = generar_link_gcal(str(row['Fecha']), str(row['Hora']), str(row['Servicio']), str(row['Cliente']))
+                link_gcal_corto = generar_link_gcal(str(row['Fecha']), str(row['Hora']), str(row['Servicio']), str(row['Cliente']))
                 
                 msg_cli = (
                     f"¡Hola {row['Cliente']}! ✨ Confirmamos tu cita en Punto Glow para el {row['Fecha']} {row['Hora']} ({row['Servicio']}).\n"
                     f"💰 Anticipo abonado: ${float(row['Anticipo ($)']):,.2f}.\n\n"
-                    f"📅 Agrega tu cita a Google Calendar aquí:\n{link_gcal}"
+                    f"📅 Agrega tu cita a Google Calendar aquí:\n{link_gcal_corto}"
                 )
                 link_cli = crear_link_wa(row.get("Tel_Cliente", "5215530350615"), msg_cli)
                 
