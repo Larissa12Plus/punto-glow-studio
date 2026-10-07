@@ -1,2 +1,2 @@
-Fecha,Cliente,Servicio,Monto,Método de Pago,Fecha_Hora,Atendido Por,Método Pago,Monto ($),Pago Total ($),Ubicación,Pago a Talento ($),20% Arguettas ($),Utilidad Punto Glow ($),Dinero,Comentarios
-,Orgánico,Uñas Gel / Acrílico,,,2026-08-26 11:04,Mariana,Efectivo,600.0,600.0,Santa Fe,300.0,0.0,300.0,Efectivo,Migrado automáticamente
+Fecha_Hora,Cliente,Servicio,Ubicación,Atendido Por,Cobro Total ($),Pago al Talento ($),20% Arguettas ($),Utilidad Punto Glow ($),Dinero,Comentarios
+2026-09-29,Sofía Mendoza,Alaciado Permanente,Santa Fe,Larissa,1500.0,800.0,0.0,700.0,Efectivo,"Convertida de Cita. Servicio: alaciado. Anticipo previo: $1,000.00"

@@ -1,2 +1,2 @@
-Fecha,Hora,Cliente,Teléfono,Servicio,Link Google Meet,Tel_Cliente,Especialista,Tel_Especialista,Link Meet
-2026-08-25,07:48 pm,Sofi,,uñas,,+525620120353,Mariana,524420001122,https://meet.google.com/new
+Fecha,Hora,Cliente,Tel_Cliente,Servicio,Especialista,Link Meet,Anticipo ($),Estatus,Motivo Cancelación
+2026-10-06,12:45 pm,Sofía Mendoza,5215530350615,alaciado,Larissa,https://meet.google.com/new,1000.0,Confirmada,
