@@ -13,3 +13,6 @@ venv/
 
 # Archivos de cierre exportados
 *.xlsx
+
+# Archivos internos de workflows de Kiro
+.agents/
