@@ -81,6 +81,32 @@ def _leer_df(sql: str, params: Optional[dict] = None) -> pd.DataFrame:
         return pd.read_sql(text(sql), conn, params=params or {})
 
 
+# Entidades con soft-delete sobre las que se permite archivar / restaurar.
+# Lista blanca fija: el nombre de tabla NUNCA se interpola desde entrada libre.
+_TABLAS_ARCHIVABLES = {"usuarios", "clientes", "servicios", "citas", "ventas", "gastos"}
+
+
+def _restaurar_fila(tabla: str, fila_id, usuario_actor: Optional[str] = None) -> None:
+    """
+    Restaura (des-archiva) una fila: UPDATE <tabla> SET is_deleted = FALSE WHERE id = :id.
+
+    El nombre de tabla se valida contra una lista blanca fija (no se interpola
+    entrada libre) y el id siempre va parametrizado. updated_at lo refresca el
+    trigger set_updated_at. La restauracion se audita con accion 'UPDATE' (el
+    CHECK de audit_log solo admite 'INSERT' | 'UPDATE' | 'SOFT_DELETE') y una
+    marca {"restaurado": True} para distinguirla en el historial.
+    """
+    if tabla not in _TABLAS_ARCHIVABLES:
+        raise ValueError(f"Tabla no restaurable: {tabla!r}")
+    engine = obtener_engine()
+    with engine.begin() as conn:
+        conn.execute(
+            text(f"UPDATE {tabla} SET is_deleted = FALSE WHERE id = :id"),
+            {"id": int(fila_id)},
+        )
+        _registrar_auditoria(conn, tabla, fila_id, "UPDATE", {"restaurado": True}, usuario_actor)
+
+
 def _registrar_auditoria(conn, tabla: str, fila_id, accion: str,
                          datos: Optional[dict] = None,
                          usuario: Optional[str] = None) -> None:
@@ -212,6 +238,27 @@ def soft_delete_usuario(usuario_id: int, usuario_actor: Optional[str] = None) ->
         _registrar_auditoria(conn, "usuarios", usuario_id, "SOFT_DELETE", None, usuario_actor)
 
 
+def obtener_usuarios_archivados() -> pd.DataFrame:
+    """Usuarios archivados (is_deleted = TRUE), con columnas amigables para la UI."""
+    df = _leer_df(
+        """
+        SELECT id, nombre AS "Nombre", correo AS "Correo", rol AS "Rol",
+               updated_at AS "Archivado (updated_at)"
+        FROM usuarios
+        WHERE is_deleted = TRUE
+        ORDER BY updated_at DESC
+        """
+    )
+    if not df.empty:
+        df["Rol"] = df["Rol"].map(lambda r: _rol_a_ui(r) if r is not None else r)
+    return df
+
+
+def restaurar_usuario(usuario_id: int, usuario_actor: Optional[str] = None) -> None:
+    """Restaura un usuario archivado (is_deleted = FALSE) y lo audita."""
+    _restaurar_fila("usuarios", usuario_id, usuario_actor)
+
+
 def sembrar_admin_si_no_existe() -> None:
     """
     Siembra la cuenta de administradora (Larissa García) con su contrasena
@@ -288,6 +335,24 @@ def obtener_o_crear_cliente(nombre: str, telefono: Optional[str] = None,
         return int(nuevo_id)
 
 
+def obtener_clientes_archivados() -> pd.DataFrame:
+    """Clientes archivados (is_deleted = TRUE)."""
+    return _leer_df(
+        """
+        SELECT id, nombre AS "Nombre", telefono AS "Teléfono", notas AS "Notas",
+               updated_at AS "Archivado (updated_at)"
+        FROM clientes
+        WHERE is_deleted = TRUE
+        ORDER BY updated_at DESC
+        """
+    )
+
+
+def restaurar_cliente(cliente_id: int, usuario_actor: Optional[str] = None) -> None:
+    """Restaura un cliente archivado (is_deleted = FALSE) y lo audita."""
+    _restaurar_fila("clientes", cliente_id, usuario_actor)
+
+
 # ===========================================================================
 # SERVICIOS
 # ===========================================================================
@@ -323,6 +388,24 @@ def crear_servicio(nombre: str, tarifa: float = 0.0,
             {"nombre": nombre, "tarifa": tarifa}, usuario_actor,
         )
     return int(nuevo_id)
+
+
+def obtener_servicios_archivados() -> pd.DataFrame:
+    """Servicios archivados (is_deleted = TRUE)."""
+    return _leer_df(
+        """
+        SELECT id, nombre AS "Servicio", tarifa AS "Tarifa",
+               updated_at AS "Archivado (updated_at)"
+        FROM servicios
+        WHERE is_deleted = TRUE
+        ORDER BY updated_at DESC
+        """
+    )
+
+
+def restaurar_servicio(servicio_id: int, usuario_actor: Optional[str] = None) -> None:
+    """Restaura un servicio archivado (is_deleted = FALSE) y lo audita."""
+    _restaurar_fila("servicios", servicio_id, usuario_actor)
 
 
 # ===========================================================================
@@ -422,6 +505,34 @@ def soft_delete_cita(cita_id: int, usuario_actor: Optional[str] = None) -> None:
         _registrar_auditoria(conn, "citas", cita_id, "SOFT_DELETE", None, usuario_actor)
 
 
+def obtener_citas_archivadas() -> pd.DataFrame:
+    """Citas archivadas (is_deleted = TRUE), con columnas amigables."""
+    return _leer_df(
+        """
+        SELECT id,
+               fecha               AS "Fecha",
+               hora                AS "Hora",
+               cliente_id,
+               cliente_nombre      AS "Cliente",
+               servicio            AS "Servicio",
+               especialista        AS "Especialista",
+               link_meet           AS "Link Meet",
+               anticipo            AS "Anticipo ($)",
+               estatus             AS "Estatus",
+               motivo_cancelacion  AS "Motivo Cancelación",
+               updated_at          AS "Archivado (updated_at)"
+        FROM citas
+        WHERE is_deleted = TRUE
+        ORDER BY updated_at DESC
+        """
+    )
+
+
+def restaurar_cita(cita_id: int, usuario_actor: Optional[str] = None) -> None:
+    """Restaura una cita archivada (is_deleted = FALSE) y la audita."""
+    _restaurar_fila("citas", cita_id, usuario_actor)
+
+
 # ===========================================================================
 # VENTAS
 # ===========================================================================
@@ -501,6 +612,36 @@ def soft_delete_venta(venta_id: int, usuario_actor: Optional[str] = None) -> Non
         _registrar_auditoria(conn, "ventas", venta_id, "SOFT_DELETE", None, usuario_actor)
 
 
+def obtener_ventas_archivadas() -> pd.DataFrame:
+    """Ventas archivadas (is_deleted = TRUE), con columnas amigables."""
+    return _leer_df(
+        """
+        SELECT id,
+               fecha          AS "Fecha_Hora",
+               cliente_id,
+               cliente_nombre AS "Cliente",
+               servicio       AS "Servicio",
+               ubicacion      AS "Ubicación",
+               atendido_por   AS "Atendido Por",
+               cobro_total    AS "Cobro Total ($)",
+               pago_talento   AS "Pago al Talento ($)",
+               arguettas_20   AS "20% Arguettas ($)",
+               utilidad       AS "Utilidad Punto Glow ($)",
+               metodo_pago    AS "Dinero",
+               comentarios    AS "Comentarios",
+               updated_at     AS "Archivado (updated_at)"
+        FROM ventas
+        WHERE is_deleted = TRUE
+        ORDER BY updated_at DESC
+        """
+    )
+
+
+def restaurar_venta(venta_id: int, usuario_actor: Optional[str] = None) -> None:
+    """Restaura una venta archivada (is_deleted = FALSE) y la audita."""
+    _restaurar_fila("ventas", venta_id, usuario_actor)
+
+
 # ===========================================================================
 # GASTOS
 # ===========================================================================
@@ -554,3 +695,25 @@ def soft_delete_gasto(gasto_id: int, usuario_actor: Optional[str] = None) -> Non
             {"id": gasto_id},
         )
         _registrar_auditoria(conn, "gastos", gasto_id, "SOFT_DELETE", None, usuario_actor)
+
+
+def obtener_gastos_archivados() -> pd.DataFrame:
+    """Gastos archivados (is_deleted = TRUE), con columnas amigables."""
+    return _leer_df(
+        """
+        SELECT id,
+               fecha     AS "Fecha",
+               concepto  AS "Concepto",
+               categoria AS "Categoría",
+               monto     AS "Monto ($)",
+               updated_at AS "Archivado (updated_at)"
+        FROM gastos
+        WHERE is_deleted = TRUE
+        ORDER BY updated_at DESC
+        """
+    )
+
+
+def restaurar_gasto(gasto_id: int, usuario_actor: Optional[str] = None) -> None:
+    """Restaura un gasto archivado (is_deleted = FALSE) y lo audita."""
+    _restaurar_fila("gastos", gasto_id, usuario_actor)

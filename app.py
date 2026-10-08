@@ -135,6 +135,36 @@ def cargar_usuarios() -> pd.DataFrame:
     return db.obtener_usuarios()
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_ventas_archivadas() -> pd.DataFrame:
+    return db.obtener_ventas_archivadas()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_gastos_archivados() -> pd.DataFrame:
+    return db.obtener_gastos_archivados()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_citas_archivadas() -> pd.DataFrame:
+    return db.obtener_citas_archivadas()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_usuarios_archivados() -> pd.DataFrame:
+    return db.obtener_usuarios_archivados()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_clientes_archivados() -> pd.DataFrame:
+    return db.obtener_clientes_archivados()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def cargar_servicios_archivados() -> pd.DataFrame:
+    return db.obtener_servicios_archivados()
+
+
 def invalidar_cache() -> None:
     """Limpia la cache de lecturas para que la UI muestre datos frescos."""
     st.cache_data.clear()
@@ -629,6 +659,8 @@ else:
         if st.session_state.get("es_admin", False):
             opciones_menu.append("Gestión de Usuarios")
             iconos_menu.append("person-gear")
+            opciones_menu.append("Papelera / Restaurar")
+            iconos_menu.append("trash")
 
         menu_seleccionado = option_menu(
             menu_title=None,
@@ -980,3 +1012,163 @@ else:
             else:
                 st.info("No hay usuarios registrados.")
             st.markdown('</div>', unsafe_allow_html=True)
+
+    elif menu_seleccionado == "Papelera / Restaurar":
+        # Defensa en profundidad: la opción solo aparece para admin, pero
+        # igual se protege la vista por si se alcanza por otro camino.
+        if not st.session_state.get("es_admin", False):
+            st.error("🔒 Acceso restringido. Esta sección es solo para la administradora.")
+        else:
+            st.markdown('<div class="section-title">🗑️ Papelera / Restaurar</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-sub">Aquí se recuperan los registros archivados. Nada se borra físicamente: restaurar vuelve a dejar visible el registro en su lista.</div>', unsafe_allow_html=True)
+
+            tab_v, tab_g, tab_c, tab_u, tab_cli, tab_srv = st.tabs(
+                ["Ventas", "Gastos", "Citas", "Usuarios", "Clientes", "Servicios"]
+            )
+
+            # ---- Ventas archivadas ----
+            with tab_v:
+                st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
+                df_arch = cargar_ventas_archivadas()
+                if df_arch.empty:
+                    st.info("No hay ventas en la papelera.")
+                else:
+                    for _, row in df_arch.iterrows():
+                        col_info, col_btn = st.columns([4, 1])
+                        with col_info:
+                            st.markdown(f"**{row['Cliente']}** — {row['Fecha_Hora']}")
+                            st.caption(
+                                f"💅 {row['Servicio']} | 📍 {row['Ubicación']} | "
+                                f"💰 ${float(row['Cobro Total ($)']):,.2f} | "
+                                f"🗑️ Archivado: {row['Archivado (updated_at)']}"
+                            )
+                        with col_btn:
+                            if st.button("♻️ Restaurar", key=f"restore_venta_{row['id']}"):
+                                db.restaurar_venta(int(row["id"]), usuario_actor=actor)
+                                invalidar_cache()
+                                st.success("Venta restaurada correctamente.")
+                                st.rerun()
+                        st.markdown("<hr style='margin:6px 0; border-color:#FFF0F5;'>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ---- Gastos archivados ----
+            with tab_g:
+                st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
+                df_arch = cargar_gastos_archivados()
+                if df_arch.empty:
+                    st.info("No hay gastos en la papelera.")
+                else:
+                    for _, row in df_arch.iterrows():
+                        col_info, col_btn = st.columns([4, 1])
+                        with col_info:
+                            st.markdown(f"**{row['Concepto']}** — {row['Fecha']}")
+                            st.caption(
+                                f"🏷️ {row['Categoría']} | "
+                                f"💸 ${float(row['Monto ($)']):,.2f} | "
+                                f"🗑️ Archivado: {row['Archivado (updated_at)']}"
+                            )
+                        with col_btn:
+                            if st.button("♻️ Restaurar", key=f"restore_gasto_{row['id']}"):
+                                db.restaurar_gasto(int(row["id"]), usuario_actor=actor)
+                                invalidar_cache()
+                                st.success("Gasto restaurado correctamente.")
+                                st.rerun()
+                        st.markdown("<hr style='margin:6px 0; border-color:#FFF0F5;'>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ---- Citas archivadas ----
+            with tab_c:
+                st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
+                df_arch = cargar_citas_archivadas()
+                if df_arch.empty:
+                    st.info("No hay citas en la papelera.")
+                else:
+                    for _, row in df_arch.iterrows():
+                        col_info, col_btn = st.columns([4, 1])
+                        with col_info:
+                            st.markdown(f"**{row['Cliente']}** — {row['Fecha']} ({row['Hora']})")
+                            st.caption(
+                                f"💅 {row['Servicio']} | 👩‍🎨 {row['Especialista']} | "
+                                f"📌 {row['Estatus']} | "
+                                f"🗑️ Archivado: {row['Archivado (updated_at)']}"
+                            )
+                        with col_btn:
+                            if st.button("♻️ Restaurar", key=f"restore_cita_{row['id']}"):
+                                db.restaurar_cita(int(row["id"]), usuario_actor=actor)
+                                invalidar_cache()
+                                st.success("Cita restaurada correctamente.")
+                                st.rerun()
+                        st.markdown("<hr style='margin:6px 0; border-color:#FFF0F5;'>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ---- Usuarios archivados ----
+            with tab_u:
+                st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
+                df_arch = cargar_usuarios_archivados()
+                if df_arch.empty:
+                    st.info("No hay usuarios en la papelera.")
+                else:
+                    for _, row in df_arch.iterrows():
+                        col_info, col_btn = st.columns([4, 1])
+                        with col_info:
+                            st.markdown(f"👤 **{row['Nombre']}** ({row['Rol']})")
+                            st.caption(
+                                f"✉️ {row['Correo']} | "
+                                f"🗑️ Archivado: {row['Archivado (updated_at)']}"
+                            )
+                        with col_btn:
+                            if st.button("♻️ Restaurar", key=f"restore_usuario_{row['id']}"):
+                                db.restaurar_usuario(int(row["id"]), usuario_actor=actor)
+                                invalidar_cache()
+                                st.success("Usuario restaurado correctamente.")
+                                st.rerun()
+                        st.markdown("<hr style='margin:6px 0; border-color:#FFF0F5;'>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ---- Clientes archivados ----
+            with tab_cli:
+                st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
+                df_arch = cargar_clientes_archivados()
+                if df_arch.empty:
+                    st.info("No hay clientes en la papelera.")
+                else:
+                    for _, row in df_arch.iterrows():
+                        col_info, col_btn = st.columns([4, 1])
+                        with col_info:
+                            st.markdown(f"👤 **{row['Nombre']}**")
+                            st.caption(
+                                f"📞 {row['Teléfono']} | "
+                                f"🗑️ Archivado: {row['Archivado (updated_at)']}"
+                            )
+                        with col_btn:
+                            if st.button("♻️ Restaurar", key=f"restore_cliente_{row['id']}"):
+                                db.restaurar_cliente(int(row["id"]), usuario_actor=actor)
+                                invalidar_cache()
+                                st.success("Cliente restaurado correctamente.")
+                                st.rerun()
+                        st.markdown("<hr style='margin:6px 0; border-color:#FFF0F5;'>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ---- Servicios archivados ----
+            with tab_srv:
+                st.markdown('<div class="table-container-card">', unsafe_allow_html=True)
+                df_arch = cargar_servicios_archivados()
+                if df_arch.empty:
+                    st.info("No hay servicios en la papelera.")
+                else:
+                    for _, row in df_arch.iterrows():
+                        col_info, col_btn = st.columns([4, 1])
+                        with col_info:
+                            st.markdown(f"💅 **{row['Servicio']}**")
+                            st.caption(
+                                f"💲 Tarifa: ${float(row['Tarifa']):,.2f} | "
+                                f"🗑️ Archivado: {row['Archivado (updated_at)']}"
+                            )
+                        with col_btn:
+                            if st.button("♻️ Restaurar", key=f"restore_servicio_{row['id']}"):
+                                db.restaurar_servicio(int(row["id"]), usuario_actor=actor)
+                                invalidar_cache()
+                                st.success("Servicio restaurado correctamente.")
+                                st.rerun()
+                        st.markdown("<hr style='margin:6px 0; border-color:#FFF0F5;'>", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
