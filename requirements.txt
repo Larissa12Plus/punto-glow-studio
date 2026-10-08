@@ -3,3 +3,6 @@ pandas
 plotly
 xlsxwriter
 streamlit-option-menu
+sqlalchemy
+psycopg2-binary
+bcrypt

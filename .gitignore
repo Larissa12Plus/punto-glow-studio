@@ -1,0 +1,15 @@
+# Secrets / credenciales (NUNCA commitear)
+.streamlit/secrets.toml
+
+# Sesion diaria persistente de la app
+sesion_punto_glow.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Archivos de cierre exportados
+*.xlsx
