@@ -161,6 +161,11 @@ def cargar_clientes_archivados() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
+def cargar_servicios() -> pd.DataFrame:
+    return db.obtener_servicios()
+
+
+@st.cache_data(ttl=60, show_spinner=False)
 def cargar_servicios_archivados() -> pd.DataFrame:
     return db.obtener_servicios_archivados()
 
@@ -468,11 +473,33 @@ else:
         def_servicio_txt = datos_precargados.get("Servicio", "") if datos_precargados else ""
         def_anticipo = datos_precargados.get("Anticipo", 0.0) if datos_precargados else 0.0
 
-        opciones_servicios = ["Uñas Gel / Acrílico", "Diseño de Cejas / Microblading", "Lash Lifting / Pestañas", "Alaciado Permanente", "Facial Glowing", "Otro"]
+        # Servicios base + los que la usuaria haya guardado en la base de datos.
+        servicios_base = [
+            "Uñas Gel / Acrílico", "Diseño de Cejas / Microblading",
+            "Lash Lifting / Pestañas", "Alaciado Permanente", "Facial Glowing",
+        ]
+        try:
+            df_servicios = cargar_servicios()
+            servicios_guardados = (
+                df_servicios["Servicio"].dropna().astype(str).tolist()
+                if not df_servicios.empty else []
+            )
+        except Exception:
+            servicios_guardados = []
+
+        # Unimos sin duplicados preservando el orden (base primero, luego guardados).
+        opciones_servicios = list(servicios_base)
+        for serv in servicios_guardados:
+            if serv not in opciones_servicios:
+                opciones_servicios.append(serv)
+        # Opción al final para dar de alta un servicio nuevo.
+        OPCION_NUEVO = "➕ Agregar nuevo servicio..."
+        opciones_servicios.append(OPCION_NUEVO)
+
         index_serv = 0
         if def_servicio_txt:
             for i, op in enumerate(opciones_servicios):
-                if op.lower() in def_servicio_txt.lower():
+                if op != OPCION_NUEVO and op.lower() in def_servicio_txt.lower():
                     index_serv = i
                     break
 
@@ -484,7 +511,16 @@ else:
 
             c_atiende, c_serv = st.columns(2)
             fv_atiende = c_atiende.text_input("ATENDIDO POR *", value=def_atiende, placeholder="Nombre de la especialista...")
-            fv_servicio = c_serv.selectbox("SERVICIO", opciones_servicios, index=index_serv)
+            fv_servicio_sel = c_serv.selectbox("SERVICIO", opciones_servicios, index=index_serv)
+
+            # Campo para capturar un servicio nuevo. Si la usuaria eligió
+            # "Agregar nuevo servicio...", lo que escriba aquí se usará y se
+            # guardará en la lista para próximas ventas.
+            fv_servicio_nuevo = st.text_input(
+                "NUEVO SERVICIO (si elegiste «Agregar nuevo servicio...»)",
+                value="",
+                placeholder="Ej. Manicure Ruso, Depilación con hilo...",
+            )
 
             f4, f5 = st.columns(2)
             fv_ubicacion = f4.selectbox("UBICACIÓN / SEDE *", ["Santa Fe", "Arguettas", "A domicilio"])
@@ -512,7 +548,28 @@ else:
             guardar = col_v2.form_submit_button("Guardar Venta", width="stretch")
 
             if guardar:
-                if fv_cliente and fv_cobro_total is not None and fv_cobro_total > 0:
+                # Resolvemos el servicio final: si la usuaria escribió uno nuevo,
+                # ese tiene prioridad; si no, se usa el del desplegable.
+                nombre_nuevo = (fv_servicio_nuevo or "").strip()
+                if fv_servicio_sel == OPCION_NUEVO:
+                    fv_servicio = nombre_nuevo
+                elif nombre_nuevo:
+                    fv_servicio = nombre_nuevo
+                else:
+                    fv_servicio = fv_servicio_sel
+
+                servicio_valido = bool(fv_servicio) and fv_servicio != OPCION_NUEVO
+
+                if fv_cliente and servicio_valido and fv_cobro_total is not None and fv_cobro_total > 0:
+                    # Si el servicio no existe aún en la lista guardada, lo damos
+                    # de alta para que quede disponible en próximas ventas.
+                    if fv_servicio not in servicios_guardados:
+                        try:
+                            db.crear_servicio(fv_servicio, usuario_actor=actor)
+                        except Exception:
+                            # El alta del catálogo no debe impedir registrar la venta.
+                            pass
+
                     db.crear_venta(
                         fecha=str(fv_fecha),
                         cliente_nombre=fv_cliente,
@@ -530,6 +587,8 @@ else:
                     invalidar_cache()
                     st.success("✨ Venta registrada con éxito.")
                     st.rerun()
+                elif not servicio_valido:
+                    st.error("Elige un servicio del desplegable o escribe uno nuevo en el campo «NUEVO SERVICIO».")
                 else:
                     st.error("Por favor completa el nombre de la clienta y un cobro total válido.")
 
@@ -537,13 +596,44 @@ else:
     def modal_agendar_cita():
         st.caption("Captura la cita, duración, anticipo abonado y datos de contacto")
         ahora_cdmx = obtener_ahora_cdmx()
+
+        # Servicios base + los que la usuaria haya guardado en la base de datos.
+        servicios_base = [
+            "Uñas Gel / Acrílico", "Diseño de Cejas / Microblading",
+            "Lash Lifting / Pestañas", "Alaciado Permanente", "Facial Glowing",
+        ]
+        try:
+            df_servicios = cargar_servicios()
+            servicios_guardados = (
+                df_servicios["Servicio"].dropna().astype(str).tolist()
+                if not df_servicios.empty else []
+            )
+        except Exception:
+            servicios_guardados = []
+
+        opciones_servicios = list(servicios_base)
+        for serv in servicios_guardados:
+            if serv not in opciones_servicios:
+                opciones_servicios.append(serv)
+        OPCION_NUEVO = "➕ Agregar nuevo servicio..."
+        opciones_servicios.append(OPCION_NUEVO)
+
         with st.form("form_modal_cita", clear_on_submit=True):
             fc_cliente = st.text_input("NOMBRE DE LA CLIENTA *", value="", placeholder="Ej. Sofía Mendoza")
             st.text_input("WHATSAPP CONTACTO (PUNTO GLOW)", value="55 3035 0615", disabled=True)
 
             col_s1, col_s2 = st.columns(2)
-            fc_servicio = col_s1.text_input("SERVICIO *", value="", placeholder="Ej. Uñas & Lash Lift")
+            fc_servicio_sel = col_s1.selectbox("SERVICIO *", opciones_servicios, index=0)
             fc_especialista = col_s2.text_input("ESPECIALISTA / TALENTO *", value="", placeholder="Ej. Mariana")
+
+            # Campo para capturar un servicio nuevo. Si la usuaria eligió
+            # "Agregar nuevo servicio...", lo que escriba aquí se usará y se
+            # guardará en la lista para próximas citas y ventas.
+            fc_servicio_nuevo = st.text_input(
+                "NUEVO SERVICIO (si elegiste «Agregar nuevo servicio...»)",
+                value="",
+                placeholder="Ej. Manicure Ruso, Depilación con hilo...",
+            )
 
             col_f1, col_f2 = st.columns(2)
             fc_fecha = col_f1.date_input("FECHA *", ahora_cdmx.date())
@@ -585,7 +675,28 @@ else:
             guardar = col_btn2.form_submit_button("Guardar Cita", width="stretch")
 
             if guardar:
-                if fc_cliente and fc_servicio:
+                # Resolvemos el servicio final: si la usuaria escribió uno nuevo,
+                # ese tiene prioridad; si no, se usa el del desplegable.
+                nombre_nuevo = (fc_servicio_nuevo or "").strip()
+                if fc_servicio_sel == OPCION_NUEVO:
+                    fc_servicio = nombre_nuevo
+                elif nombre_nuevo:
+                    fc_servicio = nombre_nuevo
+                else:
+                    fc_servicio = fc_servicio_sel
+
+                servicio_valido = bool(fc_servicio) and fc_servicio != OPCION_NUEVO
+
+                if fc_cliente and servicio_valido:
+                    # Si el servicio no existe aún en la lista guardada, lo damos
+                    # de alta para que quede disponible en próximas citas y ventas.
+                    if fc_servicio not in servicios_guardados:
+                        try:
+                            db.crear_servicio(fc_servicio, usuario_actor=actor)
+                        except Exception:
+                            # El alta del catálogo no debe impedir agendar la cita.
+                            pass
+
                     link_meet = "https://meet.google.com/new" if generar_meet else "N/A"
 
                     hora_inicio_str = f"{hora_12}:{minuto} {periodo.lower()}"
@@ -611,6 +722,8 @@ else:
                     invalidar_cache()
                     st.success(f"✨ Cita agendada {horario_completo_str}.")
                     st.rerun()
+                elif not servicio_valido:
+                    st.error("Elige un servicio del desplegable o escribe uno nuevo en el campo «NUEVO SERVICIO».")
                 else:
                     st.error("Por favor completa el nombre de la clienta y el servicio.")
 
