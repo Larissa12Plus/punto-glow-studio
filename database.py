@@ -601,6 +601,57 @@ def crear_venta(fecha, cliente_nombre: str, servicio: str, ubicacion: str,
     return int(nuevo_id)
 
 
+def actualizar_venta(venta_id: int, fecha, cliente_nombre: str, servicio: str,
+                     ubicacion: str, atendido_por: str, cobro_total: float,
+                     pago_talento: float, arguettas_20: float, utilidad: float,
+                     metodo_pago: str, comentarios: Optional[str] = None,
+                     usuario_actor: Optional[str] = None) -> None:
+    """
+    Actualiza los datos de una venta existente y los audita (accion 'UPDATE').
+    Revincula (o crea) el cliente por nombre. updated_at lo refresca el trigger.
+    """
+    cliente_id = obtener_o_crear_cliente(cliente_nombre, None, usuario_actor)
+    engine = obtener_engine()
+    with engine.begin() as conn:
+        datos = {
+            "id": int(venta_id),
+            "fecha": str(fecha),
+            "cliente_id": cliente_id,
+            "cliente_nombre": cliente_nombre,
+            "servicio": servicio,
+            "ubicacion": ubicacion,
+            "atendido_por": atendido_por,
+            "cobro_total": cobro_total,
+            "pago_talento": pago_talento,
+            "arguettas_20": arguettas_20,
+            "utilidad": utilidad,
+            "metodo_pago": metodo_pago,
+            "comentarios": comentarios,
+        }
+        conn.execute(
+            text(
+                """
+                UPDATE ventas
+                SET fecha = :fecha,
+                    cliente_id = :cliente_id,
+                    cliente_nombre = :cliente_nombre,
+                    servicio = :servicio,
+                    ubicacion = :ubicacion,
+                    atendido_por = :atendido_por,
+                    cobro_total = :cobro_total,
+                    pago_talento = :pago_talento,
+                    arguettas_20 = :arguettas_20,
+                    utilidad = :utilidad,
+                    metodo_pago = :metodo_pago,
+                    comentarios = :comentarios
+                WHERE id = :id
+                """
+            ),
+            datos,
+        )
+        _registrar_auditoria(conn, "ventas", venta_id, "UPDATE", datos, usuario_actor)
+
+
 def soft_delete_venta(venta_id: int, usuario_actor: Optional[str] = None) -> None:
     """Soft-delete de una venta."""
     engine = obtener_engine()

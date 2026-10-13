@@ -601,6 +601,150 @@ else:
                 else:
                     st.error("Por favor completa el nombre de la clienta y un cobro total válido.")
 
+    @st.dialog("Editar Venta ✏️")
+    def modal_editar_venta(venta: dict):
+        venta_id = int(venta["id"])
+
+        # Servicios base + los que la usuaria haya guardado en la base de datos.
+        servicios_base = [
+            "Uñas Gel / Acrílico", "Diseño de Cejas / Microblading",
+            "Lash Lifting / Pestañas", "Alaciado Permanente", "Facial Glowing",
+        ]
+        try:
+            df_servicios = cargar_servicios()
+            servicios_guardados = (
+                df_servicios["Servicio"].dropna().astype(str).tolist()
+                if not df_servicios.empty else []
+            )
+        except Exception:
+            servicios_guardados = []
+
+        opciones_servicios = list(servicios_base)
+        for serv in servicios_guardados:
+            if serv not in opciones_servicios:
+                opciones_servicios.append(serv)
+        # El servicio actual de la venta puede no estar en el catálogo; lo incluimos.
+        serv_actual = str(venta.get("Servicio") or "")
+        if serv_actual and serv_actual not in opciones_servicios:
+            opciones_servicios.append(serv_actual)
+        OPCION_NUEVO = "➕ Agregar nuevo servicio..."
+        opciones_servicios.append(OPCION_NUEVO)
+
+        index_serv = 0
+        if serv_actual:
+            for i, op in enumerate(opciones_servicios):
+                if op == serv_actual:
+                    index_serv = i
+                    break
+
+        # Prefijos de los keys para esta venta (así cada edición es independiente).
+        kp = f"edit_venta_{venta_id}_"
+        k_ubic, k_dinero = kp + "ubicacion", kp + "dinero"
+        k_cobro, k_pago = kp + "cobro", kp + "pago"
+
+        opciones_ubicacion = ["Santa Fe", "Arguettas", "A domicilio"]
+        opciones_dinero = ["Efectivo", "Transferencia SPEI", "Tarjeta de Débito/Crédito"]
+
+        # Inicializamos los campos (que viven fuera del form) con los valores
+        # actuales de la venta, solo la primera vez que se abre este modal.
+        if k_ubic not in st.session_state:
+            ubic_actual = str(venta.get("Ubicación") or "Santa Fe")
+            st.session_state[k_ubic] = ubic_actual if ubic_actual in opciones_ubicacion else "Santa Fe"
+        if k_dinero not in st.session_state:
+            dinero_actual = str(venta.get("Dinero") or "Efectivo")
+            st.session_state[k_dinero] = dinero_actual if dinero_actual in opciones_dinero else "Efectivo"
+        if k_cobro not in st.session_state:
+            st.session_state[k_cobro] = float(venta.get("Cobro Total ($)") or 0.0)
+        if k_pago not in st.session_state:
+            st.session_state[k_pago] = float(venta.get("Pago al Talento ($)") or 0.0)
+
+        # --- Campos FUERA del form para recalcular el 20% y la utilidad en vivo.
+        f4, f5 = st.columns(2)
+        fv_ubicacion = f4.selectbox("UBICACIÓN / SEDE *", opciones_ubicacion, key=k_ubic)
+        fv_dinero = f5.selectbox("DINERO (MÉTODO PAGO)", opciones_dinero, key=k_dinero)
+
+        c_m1, c_m2, c_m3 = st.columns(3)
+        fv_cobro_total = c_m1.number_input("COBRO TOTAL ($) *", min_value=0.0, step=50.0, key=k_cobro)
+        fv_pago_talento = c_m2.number_input("PAGO AL TALENTO ($) *", min_value=0.0, step=50.0, key=k_pago)
+
+        val_cobro = fv_cobro_total if fv_cobro_total is not None else 0.0
+        val_talento = fv_pago_talento if fv_pago_talento is not None else 0.0
+
+        descuento_arguettas = (val_cobro * 0.20) if fv_ubicacion == "Arguettas" else 0.0
+        utilidad_glow = val_cobro - val_talento - descuento_arguettas
+
+        c_m3.text_input("20% ARGUETTAS ($)", value=f"${descuento_arguettas:,.2f}", disabled=True)
+        st.info(f"💡 **Utilidad estimada Punto Glow:** ${utilidad_glow:,.2f}")
+
+        with st.form(f"form_editar_venta_{venta_id}", clear_on_submit=False):
+            f1, f2 = st.columns(2)
+            try:
+                fecha_def = pd.to_datetime(str(venta.get("Fecha_Hora"))).date()
+            except Exception:
+                fecha_def = obtener_ahora_cdmx().date()
+            fv_fecha = f1.date_input("FECHA DE LA VENTA *", fecha_def)
+            fv_cliente = f2.text_input("NOMBRE DE LA CLIENTA *", value=str(venta.get("Cliente") or ""))
+
+            c_atiende, c_serv = st.columns(2)
+            fv_atiende = c_atiende.text_input("ATENDIDO POR *", value=str(venta.get("Atendido Por") or ""))
+            fv_servicio_sel = c_serv.selectbox("SERVICIO", opciones_servicios, index=index_serv)
+
+            fv_servicio_nuevo = st.text_input(
+                "NUEVO SERVICIO (si elegiste «Agregar nuevo servicio...»)",
+                value="",
+                placeholder="Ej. Manicure Ruso, Depilación con hilo...",
+            )
+
+            fv_comentarios = st.text_area("COMENTARIOS", value=str(venta.get("Comentarios") or ""))
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            col_v1, col_v2 = st.columns(2)
+            cancelar = col_v1.form_submit_button("Cancelar", width="stretch")
+            guardar = col_v2.form_submit_button("Guardar Cambios", width="stretch")
+
+            if guardar:
+                nombre_nuevo = (fv_servicio_nuevo or "").strip()
+                if fv_servicio_sel == OPCION_NUEVO:
+                    fv_servicio = nombre_nuevo
+                elif nombre_nuevo:
+                    fv_servicio = nombre_nuevo
+                else:
+                    fv_servicio = fv_servicio_sel
+
+                servicio_valido = bool(fv_servicio) and fv_servicio != OPCION_NUEVO
+
+                if fv_cliente and servicio_valido and val_cobro > 0:
+                    if fv_servicio not in servicios_guardados:
+                        try:
+                            db.crear_servicio(fv_servicio, usuario_actor=actor)
+                        except Exception:
+                            pass
+
+                    db.actualizar_venta(
+                        venta_id=venta_id,
+                        fecha=str(fv_fecha),
+                        cliente_nombre=fv_cliente,
+                        servicio=fv_servicio,
+                        ubicacion=fv_ubicacion,
+                        atendido_por=fv_atiende,
+                        cobro_total=val_cobro,
+                        pago_talento=val_talento,
+                        arguettas_20=descuento_arguettas,
+                        utilidad=utilidad_glow,
+                        metodo_pago=fv_dinero,
+                        comentarios=fv_comentarios,
+                        usuario_actor=actor,
+                    )
+                    invalidar_cache()
+                    for _k in (k_ubic, k_dinero, k_cobro, k_pago):
+                        st.session_state.pop(_k, None)
+                    st.success("✨ Venta actualizada con éxito.")
+                    st.rerun()
+                elif not servicio_valido:
+                    st.error("Elige un servicio del desplegable o escribe uno nuevo en el campo «NUEVO SERVICIO».")
+                else:
+                    st.error("Por favor completa el nombre de la clienta y un cobro total válido.")
+
     @st.dialog("Agendar Cita Punto Glow 🎆")
     def modal_agendar_cita():
         st.caption("Captura la cita, duración, anticipo abonado y datos de contacto")
@@ -936,7 +1080,7 @@ else:
             st.markdown(f'<div style="text-align:right; font-size:1.05rem; font-weight:600; color:#333; margin-top:8px;">Total Filtrado: <span style="color:#F089AB; font-weight:700;">${total_filtrado:,.2f}</span></div>', unsafe_allow_html=True)
 
         st.markdown("<br>", unsafe_allow_html=True)
-        c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 = st.columns([1.2, 1.3, 1.6, 1.1, 1.1, 1.1, 1.1, 1.2, 1.0, 0.6])
+        c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11 = st.columns([1.2, 1.3, 1.6, 1.1, 1.1, 1.1, 1.1, 1.2, 1.0, 0.6, 0.6])
         c1.markdown("**FECHA**")
         c2.markdown("**CLIENTE**")
         c3.markdown("**SERVICIO**")
@@ -946,12 +1090,13 @@ else:
         c7.markdown("**ARGUETTAS ($)**")
         c8.markdown("**UTILIDAD ($)**")
         c9.markdown("**DINERO**")
-        c10.markdown("**BORRAR**")
+        c10.markdown("**EDITAR**")
+        c11.markdown("**BORRAR**")
 
         st.markdown("<hr style='margin:8px 0; border-color:#FCE4EC;'>", unsafe_allow_html=True)
         if not df_filtrado.empty:
             for idx, row in df_filtrado.iterrows():
-                r1, r2, r3, r4, r5, r6, r7, r8, r9, r10 = st.columns([1.2, 1.3, 1.6, 1.1, 1.1, 1.1, 1.1, 1.2, 1.0, 0.6])
+                r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11 = st.columns([1.2, 1.3, 1.6, 1.1, 1.1, 1.1, 1.1, 1.2, 1.0, 0.6, 0.6])
                 r1.write(row["Fecha_Hora"])
                 r2.markdown(f"**{row['Cliente']}**")
                 r3.markdown(f'<span class="service-badge">{row["Servicio"]}</span>', unsafe_allow_html=True)
@@ -962,7 +1107,10 @@ else:
                 r8.markdown(f'**${float(row["Utilidad Punto Glow ($)"]):,.2f}**')
                 r9.write(row["Dinero"])
 
-                if r10.button("🗑️", key=f"del_venta_{row['id']}"):
+                if r10.button("✏️", key=f"edit_venta_btn_{row['id']}"):
+                    modal_editar_venta(row.to_dict())
+
+                if r11.button("🗑️", key=f"del_venta_{row['id']}"):
                     db.soft_delete_venta(int(row["id"]), usuario_actor=actor)
                     invalidar_cache()
                     st.success("Venta eliminada correctamente.")
