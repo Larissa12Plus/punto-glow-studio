@@ -504,6 +504,27 @@ else:
                     break
 
         ahora_cdmx = obtener_ahora_cdmx()
+
+        # --- Campos FUERA del form para que el cálculo del 20% y la utilidad
+        # se actualicen en vivo. Los widgets dentro de un st.form no propagan su
+        # valor hasta enviar, por eso ubicación / cobro / pago al talento van aquí.
+        f4, f5 = st.columns(2)
+        fv_ubicacion = f4.selectbox("UBICACIÓN / SEDE *", ["Santa Fe", "Arguettas", "A domicilio"], key="venta_ubicacion")
+        fv_dinero = f5.selectbox("DINERO (MÉTODO PAGO)", ["Efectivo", "Transferencia SPEI", "Tarjeta de Débito/Crédito"], key="venta_dinero")
+
+        c_m1, c_m2, c_m3 = st.columns(3)
+        fv_cobro_total = c_m1.number_input("COBRO TOTAL ($) *", min_value=0.0, step=50.0, value=None, placeholder="0.00", key="venta_cobro")
+        fv_pago_talento = c_m2.number_input("PAGO AL TALENTO ($) *", min_value=0.0, step=50.0, value=None, placeholder="0.00", key="venta_pago")
+
+        val_cobro = fv_cobro_total if fv_cobro_total is not None else 0.0
+        val_talento = fv_pago_talento if fv_pago_talento is not None else 0.0
+
+        descuento_arguettas = (val_cobro * 0.20) if fv_ubicacion == "Arguettas" else 0.0
+        utilidad_glow = val_cobro - val_talento - descuento_arguettas
+
+        c_m3.text_input("20% ARGUETTAS ($)", value=f"${descuento_arguettas:,.2f}", disabled=True)
+        st.info(f"💡 **Utilidad estimada Punto Glow:** ${utilidad_glow:,.2f}")
+
         with st.form("form_modal_venta", clear_on_submit=True):
             f1, f2 = st.columns(2)
             fv_fecha = f1.date_input("FECHA DE LA VENTA *", ahora_cdmx.date())
@@ -521,23 +542,6 @@ else:
                 value="",
                 placeholder="Ej. Manicure Ruso, Depilación con hilo...",
             )
-
-            f4, f5 = st.columns(2)
-            fv_ubicacion = f4.selectbox("UBICACIÓN / SEDE *", ["Santa Fe", "Arguettas", "A domicilio"])
-            fv_dinero = f5.selectbox("DINERO (MÉTODO PAGO)", ["Efectivo", "Transferencia SPEI", "Tarjeta de Débito/Crédito"])
-
-            c_m1, c_m2, c_m3 = st.columns(3)
-            fv_cobro_total = c_m1.number_input("COBRO TOTAL ($) *", min_value=0.0, step=50.0, value=None, placeholder="0.00")
-            fv_pago_talento = c_m2.number_input("PAGO AL TALENTO ($) *", min_value=0.0, step=50.0, value=None, placeholder="0.00")
-
-            val_cobro = fv_cobro_total if fv_cobro_total is not None else 0.0
-            val_talento = fv_pago_talento if fv_pago_talento is not None else 0.0
-
-            descuento_arguettas = (val_cobro * 0.20) if fv_ubicacion == "Arguettas" else 0.0
-            utilidad_glow = val_cobro - val_talento - descuento_arguettas
-
-            c_m3.text_input("20% ARGUETTAS ($)", value=f"${descuento_arguettas:,.2f}", disabled=True)
-            st.info(f"💡 **Utilidad estimada Punto Glow:** ${utilidad_glow:,.2f}")
 
             comentario_default = f"Convertida de Cita. Servicio: {def_servicio_txt}. Anticipo previo: ${def_anticipo:,.2f}" if datos_precargados else ""
             fv_comentarios = st.text_area("COMENTARIOS", value=comentario_default, placeholder="Notas adicionales del servicio...")
@@ -585,6 +589,11 @@ else:
                         usuario_actor=actor,
                     )
                     invalidar_cache()
+                    # Limpiamos los campos que viven fuera del form (sus keys
+                    # persisten en session_state) para que el próximo modal
+                    # empiece en blanco.
+                    for _k in ("venta_ubicacion", "venta_dinero", "venta_cobro", "venta_pago"):
+                        st.session_state.pop(_k, None)
                     st.success("✨ Venta registrada con éxito.")
                     st.rerun()
                 elif not servicio_valido:
