@@ -34,7 +34,9 @@ from sqlalchemy.engine import Engine
 # ---------------------------------------------------------------------------
 CORREO_ADMIN_UNICO = "garcialarissa1292@gmail.com"
 NOMBRE_ADMIN = "Larissa García"
-PASSWORD_ADMIN = "Lariliz1*"
+# La contrasena inicial de la admin NUNCA se hardcodea. Se lee de los secrets
+# (seccion [admin], clave password) solo para la siembra inicial. Si no esta
+# configurada, no se siembra automaticamente.
 
 # El CHECK de la columna usuarios.rol en schema.sql usa 'Recepcion' SIN acento.
 # La UI muestra "Recepción" con acento. Estos helpers normalizan en ambos sentidos.
@@ -263,10 +265,20 @@ def sembrar_admin_si_no_existe() -> None:
     """
     Siembra la cuenta de administradora (Larissa García) con su contrasena
     hasheada, solo si todavia no existe un usuario activo con ese correo.
+
+    La contrasena inicial se lee de st.secrets["admin"]["password"]. Si no esta
+    configurada, NO se siembra (evita crear una cuenta con contrasena conocida).
     """
     if obtener_usuario_por_correo(CORREO_ADMIN_UNICO) is not None:
         return
-    crear_usuario(NOMBRE_ADMIN, CORREO_ADMIN_UNICO, PASSWORD_ADMIN, "Admin",
+    try:
+        password_inicial = st.secrets["admin"]["password"]
+    except Exception:
+        password_inicial = None
+    if not password_inicial:
+        # Sin contrasena configurada en secrets no sembramos nada.
+        return
+    crear_usuario(NOMBRE_ADMIN, CORREO_ADMIN_UNICO, password_inicial, "Admin",
                   usuario_actor="sistema")
 
 

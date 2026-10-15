@@ -1,8 +1,22 @@
 # Secrets / credenciales (NUNCA commitear)
 .streamlit/secrets.toml
+*.secret
+*.key
+*.pem
+.env
+.env.*
+
+# Datos reales de clientes / negocio (información personal, NUNCA commitear)
+usuarios_punto_glow.csv
+citas_punto_glow.csv
+ventas_punto_glow.csv
+gastos_punto_glow.csv
 
 # Sesion diaria persistente de la app
 sesion_punto_glow.json
+
+# Scripts de prueba locales con credenciales
+_probar_bases.py
 
 # Python
 __pycache__/
